@@ -10,6 +10,14 @@ def mac_bytes_to_str(mac_bytes):
 def mac_str_to_bytes(mac):
     return binascii.unhexlify(mac.replace(':', '').replace('-', ''))
 
+def get_interface_mac(interface):
+    """獲取網絡介面的 MAC 地址"""
+    try:
+        with open(f'/sys/class/net/{interface}/address', 'r') as f:
+            return f.read().strip()
+    except:
+        return None
+
 def main():
     if len(sys.argv) < 2 or len(sys.argv) > 3:
         print(f"用法: sudo python {sys.argv[0]} <interface> [sender_mac]")
@@ -17,8 +25,20 @@ def main():
         
     interface = sys.argv[1]
     
-    # 更新為接收者實際的 MAC 地址
-    my_mac = "94:c6:91:a9:5d:26"  # 接收者的實際 MAC 地址
+    # 自動檢測接口的 MAC
+    detected_mac = get_interface_mac(interface)
+    if detected_mac:
+        print(f"檢測到介面 {interface} 的 MAC 地址: {detected_mac}")
+        use_detected = input("是否使用此 MAC 地址? (y/n): ").lower() == 'y'
+        if use_detected:
+            my_mac = detected_mac
+        else:
+            my_mac = "94:c6:91:a9:5d:26"
+    else:
+        my_mac = "94:c6:91:a9:5d:26"
+    
+    # 廣播地址選項
+    listen_broadcast = input("是否監聽廣播封包? (y/n): ").lower() == 'y'
     
     # 如果提供了發送者MAC，則使用；否則使用默認發送者MAC
     if len(sys.argv) == 3:
@@ -43,7 +63,9 @@ def main():
     
     s.bind((interface, 0))
     
-    print(f"監聽 {interface} 上來自 MAC {sender_mac} 發往 MAC {my_mac} 的封包")
+    print(f"監聽 {interface} 上發往 MAC {my_mac} 的封包")
+    if listen_broadcast:
+        print("同時監聽發往廣播地址的封包")
     print("等待封包中...")
     
     start_time = time.time()
@@ -62,8 +84,9 @@ def main():
         src_mac = frame[6:12]
         ether_type = struct.unpack('!H', frame[12:14])[0]
         
-        # 針對目標MAC過濾 (必須檢查)
-        if dst_mac != my_mac_bytes:
+        # 針對目標MAC過濾 (必須檢查) - 也接受廣播地址
+        broadcast_mac = b"\xff\xff\xff\xff\xff\xff"
+        if dst_mac != my_mac_bytes and (not listen_broadcast or dst_mac != broadcast_mac):
             continue
             
         # 如果需要過濾發送者，則檢查發送者MAC
@@ -76,6 +99,8 @@ def main():
         print(f"來源 MAC: {mac_bytes_to_str(src_mac)} -> 目的 MAC: {mac_bytes_to_str(dst_mac)}")
         print(f"EtherType: 0x{ether_type:04X}")
         print(f"Payload: {payload.decode(errors='ignore')}")
+        if dst_mac == broadcast_mac:
+            print("(這是一個廣播封包)")
         print("-" * 50)
         start_time = time.time()  # 重置計時器
 
