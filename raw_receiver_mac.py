@@ -16,13 +16,15 @@ def main():
         sys.exit(1)
         
     interface = sys.argv[1]
-    my_mac = "18:31:bf:93:7a:80"  # 接收者的 MAC (已更新)
+    
+    # 更新為接收者實際的 MAC 地址
+    my_mac = "94:c6:91:a9:5d:26"  # 接收者的實際 MAC 地址
     
     # 如果提供了發送者MAC，則使用；否則使用默認發送者MAC
     if len(sys.argv) == 3:
         sender_mac = sys.argv[2]
     else:
-        sender_mac = "00:15:5d:3f:70:f7"  # 預設的發送者 MAC
+        sender_mac = "00:15:5d:3f:70:f7"  # 發送者的 MAC 地址
         
     sender_mac_bytes = mac_str_to_bytes(sender_mac)
     filter_sender = True

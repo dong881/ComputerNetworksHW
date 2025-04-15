@@ -17,7 +17,7 @@ def main():
     if len(sys.argv) == 3:
         dst_mac = sys.argv[2]
     else:
-        dst_mac = "18:31:bf:93:7a:80"  # 更新為接收者的 MAC
+        dst_mac = "94:c6:91:a9:5d:26"  # 更新為接收者的實際 MAC
     
     # 也可以使用廣播地址嘗試
     # dst_mac = "ff:ff:ff:ff:ff:ff"
