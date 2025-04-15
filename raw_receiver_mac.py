@@ -62,7 +62,7 @@ def main():
         sender_mac = sys.argv[2]
         filter_sender = input("是否只接收來自此MAC的封包? (y/n): ").lower() == 'y'
     else:
-        sender_mac = "00:15:5d:3f:70:f7"  # 發送者的 MAC 地址
+        sender_mac = "18:31:bf:93:7a:80"  # 發送者的 MAC 地址
         filter_sender = False
         
     sender_mac_bytes = mac_str_to_bytes(sender_mac)
