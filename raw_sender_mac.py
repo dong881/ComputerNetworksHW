@@ -2,32 +2,43 @@ import socket
 import sys
 import binascii
 import struct
+import time
 
 def mac_str_to_bytes(mac):
     return binascii.unhexlify(mac.replace(':', ''))
 
 def main():
-    if len(sys.argv) != 2:
-        print(f"用法: sudo python {sys.argv[0]} <interface>")
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print(f"用法: sudo python {sys.argv[0]} <interface> [dst_mac]")
         sys.exit(1)
         
     interface = sys.argv[1]
-    # 接收者的 MAC
-    dst_mac = "94:c6:91:a9:5d:26"
+    # 如果指定了目標MAC，則使用；否則使用廣播地址
+    if len(sys.argv) == 3:
+        dst_mac = sys.argv[2]
+    else:
+        dst_mac = "94:c6:91:a9:5d:26"  # 預設目標MAC
+    
+    # 也可以使用廣播地址嘗試
+    # dst_mac = "ff:ff:ff:ff:ff:ff"
+    
     ether_type = 0x88B5  # 自訂 EtherType
-    payload = b'Hello Layer2 Only!'
     
     # 構建以太網幀
     dst_mac_bytes = mac_str_to_bytes(dst_mac)
-    # 發送者的 MAC - 會由系統自動填充
-    src_mac_bytes = b'\x00\x00\x00\x00\x00\x00'
-    
-    frame = dst_mac_bytes + src_mac_bytes + struct.pack('!H', ether_type) + payload
+    src_mac_bytes = b'\x00\x00\x00\x00\x00\x00'  # 系統會自動填充
     
     # 創建並發送
     s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
     s.bind((interface, 0))
-    s.send(frame)
+    
+    # 發送多個封包，增加接收機會
+    for i in range(5):
+        payload = f"Hello Layer2 Only! Packet #{i+1}".encode()
+        frame = dst_mac_bytes + src_mac_bytes + struct.pack('!H', ether_type) + payload
+        s.send(frame)
+        print(f"發送第 {i+1} 個封包...")
+        time.sleep(1)  # 間隔發送，防止封包丟失
     
     # 取得實際發送的 MAC 地址
     src_mac_actual = ':'.join(f'{b:02x}' for b in bytes.fromhex(s.getsockname()[4].hex()))
@@ -35,6 +46,7 @@ def main():
     print(f"發送者 MAC: {src_mac_actual}")
     print(f"接收者 MAC: {dst_mac}")
     print(f"EtherType: 0x{ether_type:04X}")
+    print(f"提示: 請確保發送和接收的機器位於同一網段，且使用相同的EtherType")
     s.close()
 
 if __name__ == '__main__':
