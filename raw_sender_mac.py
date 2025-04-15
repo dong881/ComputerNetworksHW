@@ -13,11 +13,11 @@ def main():
         sys.exit(1)
         
     interface = sys.argv[1]
-    # 如果指定了目標MAC，則使用；否則使用廣播地址
+    # 如果指定了目標MAC，則使用；否則使用默認的接收者MAC
     if len(sys.argv) == 3:
         dst_mac = sys.argv[2]
     else:
-        dst_mac = "94:c6:91:a9:5d:26"  # 預設目標MAC
+        dst_mac = "18:31:bf:93:7a:80"  # 更新為接收者的 MAC
     
     # 也可以使用廣播地址嘗試
     # dst_mac = "ff:ff:ff:ff:ff:ff"

@@ -8,7 +8,7 @@ def mac_bytes_to_str(mac_bytes):
     return ':'.join(f'{b:02x}' for b in mac_bytes)
 
 def mac_str_to_bytes(mac):
-    return binascii.unhexlify(mac.replace(':', ''))
+    return binascii.unhexlify(mac.replace(':', '').replace('-', ''))
 
 def main():
     if len(sys.argv) < 2 or len(sys.argv) > 3:
@@ -16,16 +16,16 @@ def main():
         sys.exit(1)
         
     interface = sys.argv[1]
-    my_mac = "94:c6:91:a9:5d:26"  # 接收者的 MAC
+    my_mac = "18:31:bf:93:7a:80"  # 接收者的 MAC (已更新)
     
-    # 如果提供了發送者MAC，則使用；否則接受所有發送者
+    # 如果提供了發送者MAC，則使用；否則使用默認發送者MAC
     if len(sys.argv) == 3:
         sender_mac = sys.argv[2]
-        sender_mac_bytes = mac_str_to_bytes(sender_mac)
-        filter_sender = True
     else:
-        sender_mac = "任何發送者"
-        filter_sender = False
+        sender_mac = "00:15:5d:3f:70:f7"  # 預設的發送者 MAC
+        
+    sender_mac_bytes = mac_str_to_bytes(sender_mac)
+    filter_sender = True
     
     my_mac_bytes = mac_str_to_bytes(my_mac)
     
