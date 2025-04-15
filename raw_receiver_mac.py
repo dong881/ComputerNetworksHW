@@ -128,7 +128,9 @@ def main():
             print(f"來源 MAC: {mac_bytes_to_str(src_mac)} -> 目的 MAC: {mac_bytes_to_str(dst_mac)}")
             print(f"EtherType: 0x{ether_type:04X}")
             print(f"是否匹配目標MAC: {dst_mac == my_mac_bytes}")
-            print(f"是否為廣播: {dst_mac == b'\xff\xff\xff\xff\xff\xff'}")
+            # Fix the backslash in f-string issue
+            broadcast = b"\xff\xff\xff\xff\xff\xff"
+            print(f"是否為廣播: {dst_mac == broadcast}")
             if filter_sender:
                 print(f"是否匹配發送MAC: {src_mac == sender_mac_bytes}")
             
