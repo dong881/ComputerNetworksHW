@@ -43,7 +43,7 @@ def main():
     if len(sys.argv) == 3:
         dst_mac = sys.argv[2]
     else:
-        dst_mac = "94:c6:91:a9:5d:26"  # 更新為接收者的實際 MAC
+        dst_mac = "18:31:BF:93:7A:80"  # 更新為接收者的實際 MAC
     
     # 在開始前，檢查網路連通性
     receiver_ip = input("請輸入接收端IP地址 (留空跳過檢查): ")

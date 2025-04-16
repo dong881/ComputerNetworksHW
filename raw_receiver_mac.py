@@ -23,7 +23,7 @@ def set_promiscuous_mode(interface, enable=True):
     """設置網路介面的混雜模式"""
     try:
         mode = "promisc" if enable else "-promisc"
-        subprocess.run(['ip', 'link', 'set', interface, mode], check=True)
+        subprocess.run(['ip', 'link', 'set', interface, mode, 'on'], check=True)
         return True
     except Exception as e:
         print(f"設置混雜模式失敗: {e}")
