@@ -3,10 +3,9 @@ import struct
 import sys
 import array
 import fcntl
-import ctypes
+import os
 
 # For Linux only (sender stays on Linux)
-SIOCGIFHWADDR = 0x8927
 SIOCGIFINDEX = 0x8933
 ETH_PROTO = 0x1234  # Must match the receiver's protocol
 BUFFER_SIZE = 1024
@@ -21,20 +20,22 @@ def create_raw_socket():
     return s
 
 def get_interface_info(iface):
-    """Get the interface index and MAC address"""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    
-    # Get interface index
-    ifreq = struct.pack('16si', iface.encode(), 0)
-    res = fcntl.ioctl(s.fileno(), SIOCGIFINDEX, ifreq)
-    ifindex = struct.unpack('16si', res)[1]
-    
-    # Get MAC address
-    res = fcntl.ioctl(s.fileno(), SIOCGIFHWADDR, ifreq)
-    mac = array.array('B', struct.unpack('16s', res)[0][18:24])
-    
-    s.close()
-    return ifindex, mac
+    """Get the interface index and MAC address using /sys/class/net filesystem"""
+    try:
+        # Get interface index
+        with open(f"/sys/class/net/{iface}/ifindex") as f:
+            ifindex = int(f.read().strip())
+        
+        # Get MAC address
+        with open(f"/sys/class/net/{iface}/address") as f:
+            mac_str = f.read().strip()
+        mac = [int(byte, 16) for byte in mac_str.split(":")]
+        
+        return ifindex, mac
+    except Exception as e:
+        print(f"Error getting interface info: {e}")
+        print(f"Make sure interface '{iface}' exists and you have required permissions")
+        raise
 
 def main():
     # Interface name - modify as needed
@@ -65,10 +66,12 @@ def main():
     # Send the frame
     try:
         # Set up the address structure for sendto
-        address = (iface, 0, 0, 0, socket.htons(ETH_PROTO))
+        address = (iface, 0)
         bytes_sent = sock.sendto(packet, address)
         
         print(f"Sent {bytes_sent} bytes to MAC {':'.join(f'{x:02X}' for x in dest_mac)}")
+        print(f"From interface {iface} (ifindex: {ifindex})")
+        print(f"Source MAC: {':'.join(f'{x:02X}' for x in src_mac)}")
     except socket.error as e:
         print(f"Failed to send: {e}")
     finally:
