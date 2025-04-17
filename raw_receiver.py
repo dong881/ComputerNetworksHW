@@ -2,6 +2,7 @@ import socket
 import struct
 import sys
 import time
+import binascii
 
 # Windows-specific constants - use integer value directly
 SIO_RCVALL = 0x98000001  # Changed from ctypes.c_ulong to int
@@ -32,15 +33,23 @@ def bind_interface(sock, interface_ip):
         sock.close()
         sys.exit(1)
 
+def contains_protocol_signature(data):
+    """Check if data contains our custom protocol signature"""
+    # Convert ETH_PROTO to bytes in network byte order (big-endian)
+    proto_bytes = struct.pack('!H', ETH_PROTO)
+    
+    # Look for the protocol bytes in the data
+    return proto_bytes in data
+
 def main():
     # Change this to your network interface's IP address
-    interface_ip = "192.168.1.100"  
+    interface_ip = "140.118.123.105"  
 
     # Create and configure socket
     sock = create_raw_socket()
     bind_interface(sock, interface_ip)
     
-    print("Waiting for frames...")
+    print(f"Waiting for frames with protocol 0x{ETH_PROTO:04X}...")
     
     try:
         while True:
@@ -51,10 +60,13 @@ def main():
             ip_header_length = (packet[0] & 0x0F) * 4  # Extract header length
             data = packet[ip_header_length:]
             
-            # Print packet information
-            print(f"\nReceived {len(packet)} bytes")
-            print(f"Source IP: {addr[0]}")
-            print(f"Data: {data.decode('ascii', errors='ignore')}")
+            # Filter packets by our protocol signature
+            if contains_protocol_signature(data):
+                print(f"\nReceived {len(packet)} bytes from {addr[0]} - PROTOCOL MATCH")
+                
+                # Print packet details
+                print(f"Data (first 64 bytes): {data[:64].hex(' ')}")
+                print(f"Decoded: {data.decode('ascii', errors='ignore')[:64]}")
             
     except KeyboardInterrupt:
         print("\nExiting program...")
