@@ -44,7 +44,7 @@ void get_interface_info(int sock, const char *iface, int *ifindex, unsigned char
 
 int main() {
     const char *iface = "eno1";  // 修改為發送端網卡名稱
-    unsigned char dest_mac[ETH_ALEN] = {0x18,0x31,0xbf,0x93,0x7a,0x80}; // 修改為接收端MAC
+    unsigned char dest_mac[ETH_ALEN] = {0x94,0xc6,0x91,0xa9,0x5d,0x26}; // 修改為接收端MAC
     unsigned char src_mac[ETH_ALEN];
     int ifindex;
 
