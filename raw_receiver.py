@@ -1,11 +1,10 @@
 import socket
 import struct
 import sys
-import ctypes
 import time
 
-# Windows-specific constants
-SIO_RCVALL = ctypes.c_ulong(0x98000001)
+# Windows-specific constants - use integer value directly
+SIO_RCVALL = 0x98000001  # Changed from ctypes.c_ulong to int
 ETH_PROTO = 0x1234  # Match the sender's protocol
 BUFFER_SIZE = 65535  # Larger buffer for safety
 
@@ -26,7 +25,7 @@ def bind_interface(sock, interface_ip):
         # Bind to the interface
         sock.bind((interface_ip, 0))
         
-        # Enable promiscuous mode
+        # Enable promiscuous mode using integer value for SIO_RCVALL
         sock.ioctl(SIO_RCVALL, 1)
     except socket.error as e:
         print(f"Socket binding error: {e}")
@@ -63,7 +62,10 @@ def main():
         print(f"Error: {e}")
     finally:
         # Disable promiscuous mode
-        sock.ioctl(SIO_RCVALL, 0)
+        try:
+            sock.ioctl(SIO_RCVALL, 0)
+        except:
+            pass
         sock.close()
 
 if __name__ == "__main__":
