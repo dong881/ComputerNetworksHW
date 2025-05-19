@@ -19,34 +19,65 @@ def traceroute(dest_name, max_hops=30, timeout=2):
     print(f"traceroute to {dest_name} ({dest_addr}), {max_hops} hops max")
     port = 33434
     ttl = 1
+    
+    # 準備收集結果的列表，用於顯示統計資訊
+    results = []
+    
     while ttl <= max_hops:
         recv_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
         send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         send_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, ttl)
         recv_socket.settimeout(timeout)
         recv_socket.bind(("", port))
-        send_time = time.time()
-        send_socket.sendto(b"", (dest_addr, port))
+        
+        # 進行三次嘗試來提高準確性
+        tries = 3
+        rtts = []
         curr_addr = None
-        try:
-            _, curr_addr = recv_socket.recvfrom(512)
-            recv_time = time.time()
-            curr_addr = curr_addr[0]
-            rtt = (recv_time - send_time) * 1000
-        except socket.timeout:
-            rtt = None
-        finally:
-            send_socket.close()
-            recv_socket.close()
+        
+        for i in range(tries):
+            send_time = time.time()
+            send_socket.sendto(b"", (dest_addr, port))
+            try:
+                _, curr_addr_info = recv_socket.recvfrom(512)
+                recv_time = time.time()
+                if not curr_addr:  # 只在第一次成功取得回應時設定 curr_addr
+                    curr_addr = curr_addr_info[0]
+                rtts.append((recv_time - send_time) * 1000)
+            except socket.timeout:
+                rtts.append(None)
+                
+        send_socket.close()
+        recv_socket.close()
+        
+        # 計算平均延遲 (忽略 timeout)
+        valid_rtts = [rtt for rtt in rtts if rtt is not None]
+        avg_rtt = sum(valid_rtts) / len(valid_rtts) if valid_rtts else None
+        
         if curr_addr:
             country, region, city = get_geolocation(curr_addr)
             geo = f" [{country} {region} {city}]" if country or region or city else ""
-            print(f"{ttl}\t{curr_addr}{geo}\t{f'{rtt:.2f} ms' if rtt else '*'}")
+            rtt_str = f"{avg_rtt:.2f} ms" if avg_rtt is not None else "*"
+            print(f"{ttl}\t{curr_addr}{geo}\t{rtt_str}")
+            results.append((ttl, curr_addr, geo, avg_rtt))
         else:
             print(f"{ttl}\t*\t*")
+            results.append((ttl, None, "", None))
+            
         ttl += 1
         if curr_addr == dest_addr:
             break
+    
+    # 顯示統計資訊
+    print("\n--- traceroute 統計 ---")
+    print(f"路徑總跳數: {len(results)}")
+    successful_hops = [r for r in results if r[1] is not None]
+    print(f"成功率: {len(successful_hops)}/{len(results)} ({len(successful_hops)/len(results)*100:.1f}%)")
+    
+    # 顯示有地理位置資訊的跳數
+    geo_hops = [r for r in results if r[2]]
+    if geo_hops:
+        print(f"經過的國家/地區: {', '.join(set([r[2].strip('[]') for r in geo_hops]))}")
 
 def main():
     import argparse
